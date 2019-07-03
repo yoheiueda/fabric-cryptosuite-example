@@ -1,0 +1,81 @@
+name: fabric_net
+version: '1.0'
+
+channels:
+  mychannel:
+    peers:
+      peer1.org1.example.com:
+        endorsingPeer: true
+        chaincodeQuery: true
+        ledgerQuery: true
+        eventSource: true
+
+organizations:
+  org1:
+    mspid: PeerOrg1
+    peers:
+      - peer1.org1.example.com
+    certificateAuthorities:
+      - ca.org1.example.com
+    cryptoPath: ./channel/crypto-config/peerOrganizations/org1.example.com/users/{username}@org1.example.com/msp
+
+certificateAuthorities:
+  ca.org1.example.com:
+    url: https://localhost:7054
+    grpcOptions:
+      ssl-target-name-override: ca.org1.example.com
+    tlsCACerts:
+      path: ./channel/crypto-config/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem
+    registrar:
+      enrollId: admin
+      enrollSecret: adminpw
+    caName: ca.org1.example.com
+
+orderers:
+  orderer1.example.com:
+    url: 'grpcs://localhost:7050'
+    tlsCACerts:
+      path: ./channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/tls/ca.crt
+    grpcOptions:
+      ssl-target-name-override: orderer1.example.com
+      #grpc-wait-for-ready-timeout: 10000
+
+peers:
+  peer1.org1.example.com:
+    url: 'grpcs://localhost:7051'
+    tlsCACerts:
+      path: channel/crypto-config/peerOrganizations/org1.example.com/peers/peer1.org1.example.com/tls/ca.crt
+    grpcOptions:
+      ssl-target-name-override: peer1.org1.example.com
+
+client:
+  organization: org1
+  logging:
+    level: warning
+  credentialStore:
+    path: ./userstore/hfc-kvs
+    cryptoStore:
+      path: ./userstore/msp
+  BCCSP:
+    security:
+     enabled: true
+     default:
+       provider: "PKCS11"
+     hashAlgorithm: "SHA2"
+     softVerify: true
+     level: 256
+     pin: "98765432"
+     label: "ForFabric"
+     library: "/usr/local/lib/softhsm/libsofthsm2.so"
+
+entityMatchers:
+  peer:
+    - pattern: peer1.org1.example.com:7051
+      urlSubstitutionExp: localhost:7051
+      sslTargetOverrideUrlSubstitutionExp: peer1.org1.example.com
+      mappedHost: peer1.org1.example.com
+  orderer:
+    - pattern: orderer1.example.com
+      urlSubstitutionExp: localhost:7050
+      sslTargetOverrideUrlSubstitutionExp: orderer1.example.com
+      mappedHost: orderer1.example.com
