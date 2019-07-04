@@ -39,6 +39,7 @@ Options:
   --orderer [string]            Orderer name
   --ca-server [string]          CA server name
   --store-path [path]           File store path (default: "./store")
+  --crypto-suite [type]         sw, pkcs11, or custom (default: "custom")
   --gopath [path]               gopath for chaincode (default: "./chaincode/go")
   -h, --help                    output usage information
 
@@ -78,7 +79,7 @@ User state including certificate is stored in state store
 
 You can check the generated certificate with the following command. (`openssl` and `jq` are necessary)
 ```
- jq -r .enrollment.identity.certificate store/statestore/user1 | openssl x509 -noout -text
+jq -r .enrollment.identity.certificate store/statestore/user1 | openssl x509 -noout -text
 ```
 
 You can get Subject Key Identifier of the public key in the certificate with the following command.
@@ -242,4 +243,80 @@ class CustomKeyValueStore {
         }));
     }
 };
+```
+
+## How to use pkcs11 crypto suite with SoftHSM
+
+### Reset fabric setup
+```
+docker-compose down
+docker-compose up -d
+rm -fr ./store
+```
+### Install SoftHSM and OpenSC tools
+On Mac:
+```
+brew install softhsm opensc
+```
+
+### Set up SoftHSM
+```
+mkdir -p store/softhsm
+echo directories.tokendir=$PWD/store/softhsm > softhsm.conf
+export SOFTHSM2_CONF=$PWD/softhsm.conf
+softhsm2-util --init-token --slot 0 --label "ForFabric" --so-pin 1234 --pin 98765432
+export CRYPTO_PKCS11_LIB=/usr/local/lib/softhsm/libsofthsm2.so
+export CRYPTO_PKCS11_SLOT=0
+export CRYPTO_PKCS11_PIN=98765432
+```
+
+### Set up fabric
+```
+node app.js setup
+```
+
+### Run client commands
+
+Use with the `--crypto-suite pkcs11` option.
+```
+node app.js --crypto-suite pkcs11 register user1
+node app.js --crypto-suite pkcs11 enroll user1 <secret>
+node app.js --crypto-suite pkcs11 --user user1 execute put abc 123
+```
+
+You can get Subject Key Identifier of the public key in the certificate with the following command.
+```
+jq -r .enrollment.signingIdentity store/statestore/user1
+```
+Output:
+```
+c1e571438a89a8fff0acbbdfff7783f288922889d0c78f18d611294466d469f0
+```
+Then, you can identify generated public and private keys as follows.
+```
+pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so --pin 98765432 --list-objects
+```
+Output:
+```
+Using slot 0 with a present token (0x201040a)
+Private Key Object; EC
+  label:      c1e571438a89a8fff0acbbdfff7783f288922889d0c78f18d611294466d469f0
+  ID:         c1e571438a89a8fff0acbbdfff7783f288922889d0c78f18d611294466d469f0
+  Usage:      decrypt, sign, unwrap, derive
+Public Key Object; EC  EC_POINT 256 bits
+  EC_POINT:   044104f66d0676f8663146ff44461e5797bd3918924da36d923567a84966663a8209f1478546587415fa8e05559eb0f421602895a136138470d57af4c4e33078fafa76
+  EC_PARAMS:  06082a8648ce3d030107
+  label:      c1e571438a89a8fff0acbbdfff7783f288922889d0c78f18d611294466d469f0
+  ID:         c1e571438a89a8fff0acbbdfff7783f288922889d0c78f18d611294466d469f0
+  Usage:      encrypt, verify, wrap
+Public Key Object; EC  EC_POINT 256 bits
+  EC_POINT:   04410472a5d97e5f3ff71b2e074881cab8571dd0aae89327223c3b7d2348e18adf5134a0f5a7766d61f182d616ebd4a72eb41399ae44d74c348b33721f21bc3c06de19
+  EC_PARAMS:  06082a8648ce3d030107
+  label:      dde4724caa26577e44d14c647e238d16b9ab000f7bf2fbbe18b021e9a8242a64
+  ID:         dde4724caa26577e44d14c647e238d16b9ab000f7bf2fbbe18b021e9a8242a64
+  Usage:      encrypt, verify, wrap
+Private Key Object; EC
+  label:      dde4724caa26577e44d14c647e238d16b9ab000f7bf2fbbe18b021e9a8242a64
+  ID:         dde4724caa26577e44d14c647e238d16b9ab000f7bf2fbbe18b021e9a8242a64
+  Usage:      decrypt, sign, unwrap, derive
 ```

@@ -7,8 +7,8 @@ const sprintf = require('sprintf-js').sprintf;
 const yaml = require('js-yaml');
 
 const sdk = require('fabric-client');
-const swCryptoStore = require('fabric-client/lib/impl/CryptoSuite_ECDSA_AES.js');
-// const pkcs11CryptoStore = require('fabric-client/lib/impl/bccsp_pkcs11.js');
+const swCryptoSuite = require('fabric-client/lib/impl/CryptoSuite_ECDSA_AES.js');
+const pkcs11CryptoSuite = require('fabric-client/lib/impl/bccsp_pkcs11.js');
 
 // Constants
 const channelConfigPath = "./channel/mychannel.tx";
@@ -25,7 +25,7 @@ if (process.env.LOGLEVEL) {
 class CustomCryptoSuite {
     // Derived from fabric-client/lib/api.js
     constructor() {
-        this.impl = new swCryptoStore(256, 'SHA2');
+        this.impl = new swCryptoSuite(256, 'SHA2');
     }
 
     generateKey(opts) {
@@ -134,7 +134,7 @@ class CustomKeyValueStore {
 };
 
 class App {
-    constructor(user, profile, storePath, channel, org, caServer, orderer, peer, gopath) {
+    constructor(user, profile, storePath, channel, org, caServer, orderer, peer, gopath, cryptoSuite) {
         const conf = yaml.safeLoad(fs.readFileSync(profile, 'utf8'));
 
         function getFromProfile(name) {
@@ -174,22 +174,34 @@ class App {
         this.caServer = caServer;
         this.orderer = orderer;
         this.peer = peer;
+        this.cryptoSuite = cryptoSuite;
 
         process.env.GOPATH = gopath;
     }
 
     async getClient() {
-        // Set up crypto store that contains user's public and private keys
-        //const cryptoSuite = sdk.newCryptoSuite();
-        const cryptoSuite = new CustomCryptoSuite();
-        const cryptoKeyStore = sdk.newCryptoKeyStore(CustomKeyValueStore, { path: this.storePath + "/cryptostore" })
-        cryptoSuite.setCryptoKeyStore(cryptoKeyStore);
         const client = await sdk.loadFromConfig(this.profile);
 
-        // Set up state store that contains certificates
+        // Set up crypto store that contains user's public and private keys
+        let cryptoSuite;
+        switch (this.cryptoSuite) {
+            case 'custom':
+                cryptoSuite = new CustomCryptoSuite();
+                break;
+            case 'sw':
+                cryptoSuite = new swCryptoSuite(256, 'SHA2');
+                break;
+            case 'pkcs11':
+                cryptoSuite = new pkcs11CryptoSuite(256, 'SHA2');
+                break;
+            default:
+                throw new Error(sprintf('Unknown crypto suite type: %s', this.cryptoSuite));
+        }
+        cryptoSuite.setCryptoKeyStore(sdk.newCryptoKeyStore(CustomKeyValueStore, { path: this.storePath + "/cryptostore" }));
         client.setCryptoSuite(cryptoSuite);
-        const newStore = await new CustomKeyValueStore({ path: this.storePath + "/statestore" });
-        client.setStateStore(newStore);
+
+        // Set up state store that contains certificates
+        client.setStateStore(await new CustomKeyValueStore({ path: this.storePath + "/statestore" }));
 
         return client;
     }
@@ -359,7 +371,7 @@ class App {
 
 function dispatch(methodName) {
     return function () {
-        const app = new App(program.user, program.profile, program.storePath, program.channel, program.org, program.caServer, program.orderer, program.peer, program.gopath);
+        const app = new App(program.user, program.profile, program.storePath, program.channel, program.org, program.caServer, program.orderer, program.peer, program.gopath, program.cryptoSuite);
         const method = app[methodName];
         const args = Array.prototype.slice.call(arguments, 0, arguments.length - 1);
         method.apply(app, args).then(() => {
@@ -381,6 +393,7 @@ function main() {
         .option('--orderer [string]', "Orderer name")
         .option('--ca-server [string]', "CA server name")
         .option('--store-path [path]', "File store path", "./store")
+        .option('--crypto-suite [type]', "sw, pkcs11, or custom", "custom")
         .option('--gopath [path]', "gopath for chaincode", "./chaincode/go");
 
     program.command('setup').action(dispatch("setup"));
