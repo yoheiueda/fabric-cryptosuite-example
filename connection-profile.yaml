@@ -25,8 +25,8 @@ organizations:
 certificateAuthorities:
   ca.org1.example.com:
     url: https://localhost:7054
-    grpcOptions:
-      ssl-target-name-override: ca.org1.example.com
+    httpOptions:
+      verify: false
     tlsCACerts:
       path: ./channel/crypto-config/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem
     registrar:
