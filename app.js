@@ -263,7 +263,8 @@ class App {
             args: [],
             txId: client.newTransactionID(true),
         };
-        const responses = await channel.sendInstantiateProposal(instantiateRequest);
+        const timeoutMS = 300000;
+        const responses = await channel.sendInstantiateProposal(instantiateRequest, timeoutMS);
         if (responses[0].filter(res => !res || res instanceof Error || !res.response || res.response.status !== 200).length > 0) {
             throw new Error(sprintf('Failed to instantiate chaincode: %j', results));
         }
